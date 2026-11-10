@@ -3,22 +3,16 @@ import os
 from decouple import config
 import dj_database_url
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Usar variables de entorno
-SECRET_KEY = config(
-    "SECRET_KEY",
-)
+# --- GÜVENLİK VE ORTAM AYARLARI ---
+# Koyeb'de Environment Variables kısmına yazdıklarımızı okur.
+# Eğer orada yoksa yerel test için varsayılanları kullanır.
+SECRET_KEY = config("SECRET_KEY", default='django-insecure-gecici-test-anahtari-12345')
 DEBUG = config("DEBUG", default=False, cast=bool)
 
-# ALLOWED_HOSTS configurado desde variable de entorno
-ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1",
-    cast=lambda v: [s.strip() for s in v.split(",")],
-)
-# Always allow loopback for Docker healthcheck
+# ALLOWED_HOSTS: Koyeb alan adına (.koyeb.app) izin verir.
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,.koyeb.app", cast=lambda v: [s.strip() for s in v.split(",")])
 for _h in ("localhost", "127.0.0.1"):
     if _h not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_h)
@@ -44,7 +38,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # Whitenoise para archivos estáticos
+    "whitenoise.middleware.WhiteNoiseMiddleware", 
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -74,103 +68,75 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "osint_hub.wsgi.application"
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-# settings.py
-
+# Database - Yerelde SQLite, Koyeb'de PostgreSQL varsa onu kullanır
 db_url = config("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
 DATABASES = {"default": dj_database_url.parse(db_url)}
 
-
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
-
-
-# Internationalization
 
 LANGUAGE_CODE = "es-mx"
 TIME_ZONE = "America/Mexico_City"
 USE_I18N = True
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
-
+# Static files
 STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"  # Para producción
+STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
 
-# Configuración de Whitenoise para archivos estáticos
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 
-# Media files
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Directory to persist username search results (outside project root by default).
-# Can be overridden with an environment-specific absolute path via
-# the SEARCH_RESULTS_DIR setting or env var when deploying.
 SEARCH_RESULTS_DIR = config(
     "SEARCH_RESULTS_DIR",
     default=str(BASE_DIR / "data" / "search_results"),
 )
 
-# Configuración de seguridad para producción
-SESSION_COOKIE_SECURE = True
+# --- GÜVENLİK AYARLARI (Canlı Ortam İçin) ---
+# Koyeb'de HTTPS olduğu için bunları tekrar aktif ettik.
+SESSION_COOKIE_SECURE = True 
 CSRF_COOKIE_SECURE = True
-SECURE_SSL_REDIRECT = False   # Traefik/Coolify handles TLS externally
+SECURE_SSL_REDIRECT = True   
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
-SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_SECONDS = 31536000 
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
-# Configuración de CSRF_TRUSTED_ORIGINS desde variable de entorno
-csrf_trusted_origins_str = config("CSRF_TRUSTED_ORIGINS", default="")
+# CSRF Ayarları (Koyeb'deki URL'leri otomatik alması için)
+csrf_trusted_origins_str = config("CSRF_TRUSTED_ORIGINS", default="http://localhost:8000,https://*.koyeb.app")
 if csrf_trusted_origins_str:
     CSRF_TRUSTED_ORIGINS = [url.strip() for url in csrf_trusted_origins_str.split(",")]
 else:
     CSRF_TRUSTED_ORIGINS = []
 
-# 2. Configura los proxies de seguridad (necesario para Nginx/DigitalOcean)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
-# Configurar path a ExifTool
-EXIFTOOL_PATH = "/usr/bin/exiftool"  # Ruta por defecto en Ubuntu
-
+# ExifTool Path (Koyeb Linux kullandığı için burası kritik)
+EXIFTOOL_PATH = "/usr/bin/exiftool"
 if not os.path.exists(EXIFTOOL_PATH):
-    EXIFTOOL_PATH = "/usr/local/bin/exiftool"  # Ruta alternativa
+    EXIFTOOL_PATH = "/usr/local/bin/exiftool"
 
-
-# Celery Configuration
+# --- CELERY (Redis) AYARLARI ---
+# Koyeb'de REDIS_URL tanımlarsan orayı kullanır.
 REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
@@ -179,34 +145,24 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos
-CELERY_RESULT_EXPIRES = 86400  # 24 horas
+CELERY_TASK_TIME_LIMIT = 30 * 60  
+CELERY_RESULT_EXPIRES = 86400  
 CELERY_CACHE_BACKEND = "default"
-
-# Opcional: para periodic tasks
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
-# --- Configuración CSP (Content Security Policy) ---
-
-# 1. Política por defecto: Bloquear todo lo que no esté explícitamente permitido
+# --- CSP AYARLARI ---
 CSP_DEFAULT_SRC = ("'self'",)
-
-# 2. Scripts: Permitir local, CDN de Bootstrap y scripts con 'nonce' (para inlines)
 CSP_SCRIPT_SRC = (
     "'self'",
-    "https://cdn.jsdelivr.net",  # Bootstrap 5 JS
-    "https://code.jquery.com",  # Si usas jQuery
+    "https://cdn.jsdelivr.net", 
+    "https://code.jquery.com", 
 )
-
-# 3. Estilos: Permitir local y CDNs
 CSP_STYLE_SRC = (
     "'self'",
     "'unsafe-inline'",
-    "https://cdn.jsdelivr.net",  # Bootstrap 5 CSS
-    "https://fonts.googleapis.com",  # Si usas Google Fonts
+    "https://cdn.jsdelivr.net", 
+    "https://fonts.googleapis.com", 
 )
-
-# 4. Imágenes: Permitir local, data URIs (base64) y tiles de OpenStreetMap
 CSP_IMG_SRC = (
     "'self'",
     "data:",
@@ -214,32 +170,18 @@ CSP_IMG_SRC = (
     "https://*.openstreetmap.org",
     "https://*.tile.openstreetmap.org",
 )
-
-# 5. Fuentes
 CSP_FONT_SRC = (
     "'self'",
     "https://fonts.gstatic.com",
-    "https://cdn.jsdelivr.net",  # Bootstrap Icons
+    "https://cdn.jsdelivr.net", 
 )
-
-# 6. Iframes: Si embebes el mapa de OpenStreetMap en lugar de solo enlazarlo
 CSP_FRAME_SRC = (
     "'self'",
     "https://www.openstreetmap.org",
 )
-
-# 7. Conexiones fetch/XHR
 CSP_CONNECT_SRC = (
     "'self'",
     "https://cdn.jsdelivr.net",
 )
-
-# 8. Configuración de Nonce (Número usado una vez)
-# Esto permite ejecutar scripts inline específicos (<script nonce="...">)
-# sin permitir 'unsafe-inline' globalmente.
 CSP_INCLUDE_NONCE_IN = ["script-src"]
-
-# --- Modo Reporte (Recomendado para inicio) ---
-# Si pones esto en True, el navegador solo avisará en la consola pero no bloqueará nada.
-# Úsalo para probar en producción un par de días y luego cámbialo a False.
 CSP_REPORT_ONLY = False
